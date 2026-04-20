@@ -8,12 +8,14 @@ import { AgentChat } from './AgentChat';
 import { InterimEvents } from './InterimEvents';
 import { GoalsTree } from './GoalsTree';
 import { ManagerTrackPanel } from './ManagerTrackPanel';
+import { ManagerDynamicsPanel } from './ManagerDynamicsPanel';
 import type { Manager, Meeting, UserRole } from '@/types';
 
-type Tab = 'meetings' | 'track' | 'library' | 'chat' | 'events' | 'goals';
+type Tab = 'meetings' | 'dynamics' | 'track' | 'library' | 'chat' | 'events' | 'goals';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'meetings', label: 'Встречи' },
+  { id: 'dynamics', label: 'Динамика' },
   { id: 'track', label: 'Трек' },
   { id: 'library', label: 'Библиотека' },
   { id: 'chat', label: 'Чат с AI' },
@@ -81,6 +83,14 @@ export function ManagerTabs({ manager, companyId, meetings, currentUserId, userR
               </h3>
               <ManagerTrackPanel managerId={manager.id} managerName={manager.name} userRole={userRole} />
             </div>
+          )}
+          {activeTab === 'dynamics' && (
+            <ManagerDynamicsPanel
+              managerId={manager.id}
+              meetings={meetings}
+              initialSnapshot={manager.dynamics_snapshot}
+              initialSnapshotUpdatedAt={manager.dynamics_snapshot_updated_at}
+            />
           )}
           {activeTab === 'library' && (
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">

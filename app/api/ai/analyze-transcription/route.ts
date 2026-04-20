@@ -71,11 +71,11 @@ export async function POST(request: NextRequest) {
         { role: 'system', content: agentSystemPrompt + '\n\n' + prompt.system },
         { role: 'user', content: prompt.user },
       ],
-      max_tokens: 2500,
+      max_tokens: 4500,
       temperature: 0,
     });
 
-    let analysis: Record<string, string>;
+    let analysis: Record<string, unknown>;
     try {
       let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
           parsed = JSON.parse(parsed);
         }
       }
-      analysis = parsed as Record<string, string>;
+      analysis = parsed as Record<string, unknown>;
     } catch {
       console.error('[analyze-transcription] Raw AI response:', raw);
       return NextResponse.json(
@@ -115,11 +115,19 @@ export async function POST(request: NextRequest) {
       'next_scenario',
     ] as const;
 
-    const updates: Partial<Record<typeof fields[number], string>> = {};
+    const updates: Partial<Record<typeof fields[number], string>> & { diagnostic_extension?: Record<string, unknown> } = {};
     for (const field of fields) {
       if (typeof analysis[field] === 'string' && analysis[field].trim()) {
         updates[field] = analysis[field].trim();
       }
+    }
+
+    if (
+      analysis.diagnostic_extension &&
+      typeof analysis.diagnostic_extension === 'object' &&
+      !Array.isArray(analysis.diagnostic_extension)
+    ) {
+      updates.diagnostic_extension = analysis.diagnostic_extension as Record<string, unknown>;
     }
 
     await supabase.from('meetings').update(updates).eq('id', meeting_id);

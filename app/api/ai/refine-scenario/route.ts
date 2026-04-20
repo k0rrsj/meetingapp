@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { callOpenRouter } from '@/lib/openrouter/client';
+import { callOpenRouter, SCENARIO_OUTPUT_MAX_TOKENS } from '@/lib/openrouter/client';
 import { buildAgentSystemPrompt } from '@/lib/prompts/agent';
 import { fetchCompanyDocs } from '@/lib/context/company-docs';
 
@@ -72,7 +72,7 @@ ${edited_scenario}
         { role: 'system', content: system },
         { role: 'user', content: userMsg },
       ],
-      max_tokens: 3000,
+      max_tokens: SCENARIO_OUTPUT_MAX_TOKENS,
       temperature: 0.5,
     });
 

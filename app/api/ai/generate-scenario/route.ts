@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { callOpenRouter } from '@/lib/openrouter/client';
+import { callOpenRouter, SCENARIO_OUTPUT_MAX_TOKENS } from '@/lib/openrouter/client';
 import { buildScenarioPrompt } from '@/lib/prompts/scenario';
 import { buildAgentSystemPrompt } from '@/lib/prompts/agent';
 import { fetchCompanyDocs } from '@/lib/context/company-docs';
@@ -29,7 +29,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Встреча не найдена' }, { status: 404 });
   }
 
-  if (!meeting.previous_context_text) {
+  const needsPreviousContext = meeting.meeting_number > 1;
+  if (needsPreviousContext && !(meeting.previous_context_text?.trim())) {
     return NextResponse.json(
       { error: 'Для генерации сценария необходим контекст предыдущих встреч' },
       { status: 400 }
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
   });
 
   const prompt = buildScenarioPrompt(
-    meeting.previous_context_text,
+    meeting.previous_context_text?.trim() || null,
     {
       name: manager.name,
       position: manager.position,
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
         { role: 'system', content: agentSystemPrompt + '\n\n' + prompt.system },
         { role: 'user', content: prompt.user },
       ],
-      max_tokens: 3000,
+      max_tokens: SCENARIO_OUTPUT_MAX_TOKENS,
     });
 
     // Save to DB

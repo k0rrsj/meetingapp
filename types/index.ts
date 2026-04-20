@@ -8,6 +8,7 @@ export type ManagerStatus = 'in_progress' | 'completed';
 export type WorkType = 'one_to_one' | 'diagnostics';
 export type MeetingStatus = 'preparation' | 'conducted' | 'processed' | 'closed';
 export type MeetingType = 'one_to_one' | 'diagnostics';
+export type FirstMeetingScenarioMode = 'manual' | 'ai';
 export type CommentTarget = 'manager' | 'meeting';
 
 // Status transition order
@@ -57,8 +58,37 @@ export interface Manager {
   status: ManagerStatus;
   consultant_comments: string | null;
   ai_rules: string | null;
+  dynamics_snapshot: DynamicsSnapshot | null;
+  dynamics_snapshot_updated_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type CommitmentStatus = 'promised' | 'completed' | 'postponed' | 'ignored';
+
+export interface DynamicsSnapshot {
+  installations?: Array<{
+    meeting_number?: number;
+    thesis?: string;
+    status?: string;
+    evidence?: string;
+  }>;
+  patterns?: Array<{
+    name?: string;
+    mechanics?: string;
+    was?: string;
+    became?: string;
+    dynamics?: string;
+    evidence?: string;
+  }>;
+  commitments?: Array<{
+    text: string;
+    status: CommitmentStatus;
+    source_meeting?: number;
+    due?: string;
+    comment?: string;
+  }>;
+  summary?: Partial<Record<CommitmentStatus, number>>;
 }
 
 export interface PreviousContextJson {
@@ -72,6 +102,49 @@ export interface PreviousContextJson {
   managerProfileComments: string[];
 }
 
+export type InstallationStatus =
+  | 'accepted_intellectually'
+  | 'applied_in_action'
+  | 'normalized'
+  | 'not_accepted';
+
+export type BehaviorPatternDynamics = 'strengthened' | 'weakened' | 'counterexample' | 'unchanged';
+
+export interface DiagnosticInstallation {
+  id: string;
+  thesis: string;
+  notes?: string;
+  follow_up_status?: InstallationStatus;
+}
+
+export interface DiagnosticBehaviorPattern {
+  id: string;
+  name: string;
+  mechanics: string;
+  status: string;
+}
+
+export interface DiagnosticCommitment {
+  text: string;
+  due?: string;
+  status?: 'promised' | 'completed' | 'postponed' | 'ignored';
+}
+
+export interface DiagnosticExtension {
+  installations?: DiagnosticInstallation[];
+  behavior_patterns?: DiagnosticBehaviorPattern[];
+  regression_markers?: string[];
+  verification_hypotheses?: string[];
+  commitments?: DiagnosticCommitment[];
+  installation_followups?: Array<{ installation_id: string; status: InstallationStatus }>;
+  pattern_dynamics?: Array<{
+    pattern_name: string;
+    was: string;
+    became: string;
+    dynamics: BehaviorPatternDynamics;
+  }>;
+}
+
 export interface Meeting {
   id: string;
   manager_id: string;
@@ -83,6 +156,8 @@ export interface Meeting {
   previous_context_json: PreviousContextJson | null;
   context_from_unclosed: boolean;
   scenario: string | null;
+  scenario_approved_at: string | null;
+  first_meeting_scenario_mode: FirstMeetingScenarioMode | null;
   transcription_prompt: string | null;
   transcription_text: string | null;
   transcription_file_url: string | null;
@@ -93,6 +168,7 @@ export interface Meeting {
   weaknesses: string | null;
   action_plan: string | null;
   next_scenario: string | null;
+  diagnostic_extension: DiagnosticExtension | null;
   conducted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -113,6 +189,7 @@ export interface AiSettings {
   id: string;
   user_id: string;
   preferred_model: string;
+  telegram_chat_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -248,6 +325,9 @@ export interface UpdateMeetingRequest {
   weaknesses?: string;
   action_plan?: string;
   next_scenario?: string;
+  scenario_approved_at?: string | null;
+  first_meeting_scenario_mode?: FirstMeetingScenarioMode | null;
+  diagnostic_extension?: DiagnosticExtension | null;
 }
 
 export interface UpdateMeetingStatusRequest {
@@ -270,6 +350,7 @@ export interface AiGenerateRequest {
 
 export interface AiSettingsUpdateRequest {
   preferred_model: string;
+  telegram_chat_id?: string | null;
 }
 
 export interface AvailableModel {

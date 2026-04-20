@@ -22,7 +22,7 @@ export default async function SettingsPage() {
 
   const { data: aiSettings } = await supabase
     .from('ai_settings')
-    .select('preferred_model')
+    .select('preferred_model, telegram_chat_id')
     .eq('user_id', user.id)
     .single();
 
@@ -32,7 +32,11 @@ export default async function SettingsPage() {
     <div className="max-w-2xl space-y-10">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Настройки AI</h1>
-        <AiSettingsForm models={AVAILABLE_MODELS} currentModel={currentModel} />
+        <AiSettingsForm
+          models={AVAILABLE_MODELS}
+          currentModel={currentModel}
+          currentTelegramChatId={aiSettings?.telegram_chat_id ?? null}
+        />
       </div>
 
       <div className="border-t border-gray-200 dark:border-gray-800 pt-8">

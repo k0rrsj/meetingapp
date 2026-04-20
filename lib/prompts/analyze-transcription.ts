@@ -19,7 +19,14 @@ export function buildAnalyzeTranscriptionPrompt(
   "strengths": "...",
   "weaknesses": "...",
   "action_plan": "...",
-  "next_scenario": "..."
+  "next_scenario": "...",
+  "diagnostic_extension": {
+    "installations": [{"id":"inst-1","thesis":"...","notes":"...","follow_up_status":"accepted_intellectually"}],
+    "behavior_patterns": [{"id":"pat-1","name":"...","mechanics":"...","status":"..."}],
+    "regression_markers": ["..."],
+    "verification_hypotheses": ["..."],
+    "commitments": [{"text":"...","due":"...","status":"promised"}]
+  }
 }
 
 Описание полей:
@@ -30,6 +37,11 @@ export function buildAnalyzeTranscriptionPrompt(
 - weaknesses: слабые стороны или зоны роста, проявившиеся на этой встрече
 - action_plan: конкретные шаги и договорённости (кто, что, к когда)
 - next_scenario: рекомендуемые темы и вопросы для следующей встречи
+- diagnostic_extension.installations: установки консультанта (новая рамка мышления), с коротким id
+- diagnostic_extension.behavior_patterns: именованные паттерны с механикой и статусом
+- diagnostic_extension.regression_markers: 1-3 красных флага регресса относительно прошлой встречи
+- diagnostic_extension.verification_hypotheses: 2-3 проверяемых гипотезы на следующую встречу
+- diagnostic_extension.commitments: структурированный список договорённостей из action_plan
 
 Язык: русский. Стиль: деловой, конкретный, без воды.`;
 

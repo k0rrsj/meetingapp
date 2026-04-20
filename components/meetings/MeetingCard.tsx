@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -11,10 +12,17 @@ import { StatusBadge } from './StatusBadge';
 import { AiGenerateButton } from '@/components/shared/AiGenerateButton';
 import { CommentsList } from '@/components/comments/CommentsList';
 import { formatShortDate } from '@/lib/utils';
-import { ChevronDown, ChevronRight, ChevronUp, AlertTriangle, Upload, FileText, Loader2, CheckCircle2, XCircle, Trash2, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, AlertTriangle, Upload, FileText, Loader2, CheckCircle2, XCircle, Trash2, Sparkles, Send } from 'lucide-react';
 import { TrackUpdateDiff } from '@/components/documents/TrackUpdateDiff';
 import { toast } from 'sonner';
-import { getNextMeetingStatus, MEETING_STATUS_ORDER, type Meeting, type MeetingStatus, type UserRole } from '@/types';
+import {
+  getNextMeetingStatus,
+  MEETING_STATUS_ORDER,
+  type FirstMeetingScenarioMode,
+  type Meeting,
+  type MeetingStatus,
+  type UserRole,
+} from '@/types';
 
 interface MeetingCardProps {
   meeting: Meeting;
@@ -49,8 +57,8 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [analyzingTranscription, setAnalyzingTranscription] = useState(false);
-  const [refiningScenario, setRefiningScenario] = useState(false);
-  const [scenarioApproved, setScenarioApproved] = useState(false);
+  const [sendingScenarioToTelegram, setSendingScenarioToTelegram] = useState(false);
+  const [scenarioModeSaving, setScenarioModeSaving] = useState(false);
   const [peopleCandidates, setPeopleCandidates] = useState<Array<{ name: string; position?: string; context?: string }>>([]);
   const [selectedPeople, setSelectedPeople] = useState<Set<string>>(new Set());
   const [creatingCards, setCreatingCards] = useState(false);
@@ -59,16 +67,29 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
   const pendingSaveRef = useRef<Record<string, unknown>>({});
 
   const isAssistant = userRole === 'assistant';
+  const isConsultant = userRole === 'consultant';
+
+  const assistantFields: Record<MeetingStatus, string[]> = {
+    preparation: ['date', 'scenario', 'scenario_approved_at', 'first_meeting_scenario_mode', 'transcription_prompt', 'previous_context_text', 'previous_context_json'],
+    conducted: ['date', 'transcription_text', 'transcription_file_url', 'previous_context_text', 'previous_context_json'],
+    processed: [
+      'key_facts', 'problems_signals', 'conclusions', 'strengths', 'weaknesses', 'action_plan', 'next_scenario',
+      'previous_context_text', 'previous_context_json',
+    ],
+    closed: [],
+  };
+
+  const consultantFields: Record<MeetingStatus, string[]> = {
+    preparation: ['date', 'scenario', 'scenario_approved_at', 'first_meeting_scenario_mode', 'transcription_prompt', 'previous_context_text', 'previous_context_json'],
+    conducted: ['previous_context_text', 'previous_context_json'],
+    processed: ['previous_context_text', 'previous_context_json'],
+    closed: [],
+  };
 
   const canEdit = (field: string): boolean => {
-    if (!isAssistant) return false;
-    const statusFields: Record<MeetingStatus, string[]> = {
-      preparation: ['date', 'scenario', 'transcription_prompt'],
-      conducted: ['date', 'transcription_text', 'transcription_file_url'],
-      processed: ['key_facts', 'problems_signals', 'conclusions', 'strengths', 'weaknesses', 'action_plan', 'next_scenario'],
-      closed: [],
-    };
-    return statusFields[meeting.status]?.includes(field) ?? false;
+    if (isAssistant) return assistantFields[meeting.status]?.includes(field) ?? false;
+    if (isConsultant) return consultantFields[meeting.status]?.includes(field) ?? false;
+    return false;
   };
 
   const saveField = useCallback((field: string, value: unknown) => {
@@ -104,10 +125,43 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
   }, [meeting.id]);
 
   function updateField(field: string, value: string) {
-    setMeeting((prev) => ({ ...prev, [field]: value }));
+    setMeeting((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'scenario') {
+        next.scenario_approved_at = null;
+      }
+      return next;
+    });
     if (canEdit(field)) {
       saveField(field, value);
+      if (field === 'scenario') {
+        saveField('scenario_approved_at', null);
+      }
     }
+  }
+
+  function updateDiagnosticExtension(partial: Record<string, unknown>) {
+    const next = {
+      ...(meeting.diagnostic_extension ?? {}),
+      ...partial,
+    };
+    setMeeting((prev) => ({ ...prev, diagnostic_extension: next }));
+    if (canEdit('diagnostic_extension')) {
+      saveField('diagnostic_extension', next);
+    }
+  }
+
+  async function patchMeeting(payload: Record<string, unknown>) {
+    const res = await fetch(`/api/meetings/${meeting.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error ?? 'Ошибка сохранения');
+    }
+    setMeeting((prev) => ({ ...prev, ...data }));
   }
 
   async function handleStatusChange() {
@@ -257,35 +311,58 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
     }
   }
 
-  async function handleRefineScenario() {
-    if (!meeting.scenario?.trim()) {
-      toast.error('Сначала сгенерируйте или введите сценарий');
-      return;
-    }
-    setRefiningScenario(true);
+  async function handleApproveScenario() {
     try {
-      const res = await fetch('/api/ai/refine-scenario', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meeting_id: meeting.id, edited_scenario: meeting.scenario }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error ?? 'Ошибка улучшения сценария');
-        return;
-      }
-      updateField('scenario', data.scenario);
-      toast.success('Сценарий улучшен');
-    } catch {
-      toast.error('Ошибка соединения');
-    } finally {
-      setRefiningScenario(false);
+      await patchMeeting({ scenario_approved_at: new Date().toISOString() });
+      toast.success('Сценарий утверждён');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Ошибка сохранения';
+      toast.error(message);
     }
   }
 
-  function handleApproveScenario() {
-    setScenarioApproved(true);
-    toast.success('Сценарий утверждён');
+  async function handleSendScenarioToTelegram() {
+    if (!meeting.scenario_approved_at) {
+      toast.error('Сначала утвердите сценарий');
+      return;
+    }
+    setSendingScenarioToTelegram(true);
+    try {
+      const res = await fetch('/api/telegram/send-scenario', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meeting_id: meeting.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? 'Ошибка отправки в Telegram');
+        return;
+      }
+      toast.success('Сценарий отправлен в Telegram');
+    } catch {
+      toast.error('Ошибка соединения');
+    } finally {
+      setSendingScenarioToTelegram(false);
+    }
+  }
+
+  async function handleScenarioModeChange(mode: FirstMeetingScenarioMode) {
+    const previousMode = meeting.first_meeting_scenario_mode ?? 'ai';
+    if (previousMode === mode || scenarioModeSaving) {
+      return;
+    }
+    setScenarioModeSaving(true);
+    setMeeting((prev) => ({ ...prev, first_meeting_scenario_mode: mode }));
+    try {
+      await patchMeeting({ first_meeting_scenario_mode: mode });
+      toast.success(mode === 'manual' ? 'Режим: свой сценарий' : 'Режим: генерация AI');
+    } catch (err) {
+      setMeeting((prev) => ({ ...prev, first_meeting_scenario_mode: previousMode }));
+      const message = err instanceof Error ? err.message : 'Ошибка сохранения';
+      toast.error(message);
+    } finally {
+      setScenarioModeSaving(false);
+    }
   }
 
   async function handleAnalyzeTranscription() {
@@ -308,8 +385,28 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
         return;
       }
 
-      const { key_facts, problems_signals, conclusions, strengths, weaknesses, action_plan, next_scenario, people_candidates } = data;
-      setMeeting((prev) => ({ ...prev, key_facts, problems_signals, conclusions, strengths, weaknesses, action_plan, next_scenario }));
+      const {
+        key_facts,
+        problems_signals,
+        conclusions,
+        strengths,
+        weaknesses,
+        action_plan,
+        next_scenario,
+        diagnostic_extension,
+        people_candidates,
+      } = data;
+      setMeeting((prev) => ({
+        ...prev,
+        key_facts,
+        problems_signals,
+        conclusions,
+        strengths,
+        weaknesses,
+        action_plan,
+        next_scenario,
+        diagnostic_extension: diagnostic_extension ?? prev.diagnostic_extension,
+      }));
       toast.success('Расшифровка обработана — поля заполнены');
 
       if (people_candidates?.length > 0) {
@@ -357,6 +454,10 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
 
   const nextStatus = getNextMeetingStatus(meeting.status);
   const nextButtonLabel = NEXT_STATUS_BUTTON[meeting.status];
+  const isFirstMeeting = meeting.meeting_number === 1;
+  const firstMeetingMode = meeting.first_meeting_scenario_mode ?? 'ai';
+  const showScenarioGenerator = !isFirstMeeting || firstMeetingMode === 'ai';
+  const canGenerateScenario = isFirstMeeting || !!(meeting.previous_context_text?.trim());
 
   return (
     <div className="border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden bg-white dark:bg-gray-900">
@@ -455,54 +556,90 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
             )}
           </div>
 
-          {/* Context */}
-          {meeting.previous_context_text && (
-            <ExpandableField
-              label={
-                <div className="flex items-center gap-2">
-                  <span>Контекст из предыдущих встреч</span>
-                  {meeting.context_from_unclosed && (
-                    <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                      <AlertTriangle className="w-3 h-3" />
-                      Из незакрытой встречи
+          {/* Context + preparation: на первой встрече сначала подготовка, потом вводной контекст */}
+          {(() => {
+            const contextVisible =
+              (meeting.previous_context_text != null && meeting.previous_context_text !== '') ||
+              canEdit('previous_context_text');
+            const contextSection = contextVisible ? (
+              <ExpandableField
+                label={
+                  <div className="flex items-center gap-2">
+                    <span>{isFirstMeeting ? 'Вводной контекст' : 'Контекст из предыдущих встреч'}</span>
+                    {meeting.context_from_unclosed && (
+                      <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                        <AlertTriangle className="w-3 h-3" />
+                        Из незакрытой встречи
+                      </span>
+                    )}
+                  </div>
+                }
+                hint={
+                  isFirstMeeting ? (
+                    <span>
+                      Первая встреча с руководителем: прошлых сессий в треке ещё нет. Базовый профиль — в карточке; сюда можно добавить факты до старта или оставить пустым и сгенерировать сценарий по профилю.
                     </span>
-                  )}
-                </div>
-              }
-              value={meeting.previous_context_text}
-            />
-          )}
+                  ) : undefined
+                }
+                placeholder={
+                  isFirstMeeting
+                    ? 'Необязательно: факты до первой сессии. Можно оставить пустым.'
+                    : 'Текст контекста из предыдущих встреч…'
+                }
+                value={meeting.previous_context_text ?? ''}
+                editable={canEdit('previous_context_text')}
+                onChange={(v) => updateField('previous_context_text', v)}
+              />
+            ) : null;
 
-          {/* Preparation fields — visible for all statuses, editable only in preparation */}
-          {(meeting.scenario || meeting.transcription_prompt || meeting.status === 'preparation') && (
-            <>
-              <MeetingTextField
-                label="Сценарий встречи"
-                value={meeting.scenario ?? ''}
-                editable={canEdit('scenario')}
-                markdown={!canEdit('scenario')}
-                onChange={(v) => { updateField('scenario', v); setScenarioApproved(false); }}
-                aiButton={canEdit('scenario') ? (
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <AiGenerateButton
-                      endpoint="/api/ai/generate-scenario"
-                      meetingId={meeting.id}
-                      onSuccess={(v) => { updateField('scenario', v); setScenarioApproved(false); }}
-                      label="Сгенерировать"
-                      disabled={!meeting.previous_context_text}
-                    />
-                    {meeting.scenario && !scenarioApproved && (
-                      <>
+            const preparationSection =
+              meeting.scenario || meeting.transcription_prompt || meeting.status === 'preparation' ? (
+                <>
+                  {isFirstMeeting && (
+                    <div className="space-y-2">
+                      <Label>Способ подготовки сценария</Label>
+                      <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 p-1 gap-1 bg-gray-50 dark:bg-gray-800/40">
                         <Button
                           size="sm"
-                          variant="outline"
-                          className="h-7 text-xs gap-1"
-                          onClick={handleRefineScenario}
-                          disabled={refiningScenario}
+                          variant={firstMeetingMode === 'manual' ? 'default' : 'ghost'}
+                          className="h-7 text-xs"
+                          onClick={() => void handleScenarioModeChange('manual')}
+                          disabled={!canEdit('first_meeting_scenario_mode') || scenarioModeSaving}
                         >
-                          {refiningScenario ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                          Улучшить
+                          Свой сценарий
                         </Button>
+                        <Button
+                          size="sm"
+                          variant={firstMeetingMode === 'ai' ? 'default' : 'ghost'}
+                          className="h-7 text-xs"
+                          onClick={() => void handleScenarioModeChange('ai')}
+                          disabled={!canEdit('first_meeting_scenario_mode') || scenarioModeSaving}
+                        >
+                          Сгенерировать AI
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  <MeetingTextField
+                    label="Сценарий встречи"
+                    value={meeting.scenario ?? ''}
+                    editable={canEdit('scenario')}
+                    markdown={!canEdit('scenario')}
+                    richMarkdownEdit={canEdit('scenario')}
+                    onChange={(v) => updateField('scenario', v)}
+                    aiButton={canEdit('scenario') ? (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {showScenarioGenerator && (
+                          <AiGenerateButton
+                            endpoint="/api/ai/generate-scenario"
+                            meetingId={meeting.id}
+                            onSuccess={(v) => updateField('scenario', v)}
+                            label="Сгенерировать"
+                            disabled={!canGenerateScenario}
+                          />
+                        )}
+                    {meeting.scenario && !meeting.scenario_approved_at && (
+                      <>
                         <Button
                           size="sm"
                           className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-500"
@@ -513,11 +650,26 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
                         </Button>
                       </>
                     )}
-                    {scenarioApproved && (
-                      <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Утверждён
-                      </span>
+                    {meeting.scenario_approved_at && (
+                      <>
+                        <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Утверждён
+                        </span>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs gap-1 bg-sky-500 hover:bg-sky-400 text-white"
+                          onClick={handleSendScenarioToTelegram}
+                          disabled={sendingScenarioToTelegram}
+                        >
+                          {sendingScenarioToTelegram ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Send className="w-3 h-3" />
+                          )}
+                          Отправить в Telegram
+                        </Button>
+                      </>
                     )}
                   </div>
                 ) : undefined}
@@ -527,6 +679,8 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
                 label="Промпт для расшифровки"
                 value={meeting.transcription_prompt ?? ''}
                 editable={canEdit('transcription_prompt')}
+                markdown={!canEdit('transcription_prompt')}
+                richMarkdownEdit={canEdit('transcription_prompt')}
                 onChange={(v) => updateField('transcription_prompt', v)}
                 aiButton={canEdit('transcription_prompt') ? (
                   <AiGenerateButton
@@ -539,7 +693,16 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
                 ) : undefined}
               />
             </>
-          )}
+              ) : null;
+
+            return (
+              <>
+                {!isFirstMeeting && contextSection}
+                {preparationSection}
+                {isFirstMeeting && contextSection}
+              </>
+            );
+          })()}
 
           {/* Post-meeting fields */}
           {(meeting.status === 'conducted' || meeting.status === 'processed' || meeting.status === 'closed') && (
@@ -715,8 +878,51 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
                 value={meeting.next_scenario ?? ''}
                 editable={canEdit('next_scenario')}
                 markdown={!canEdit('next_scenario')}
+                richMarkdownEdit={canEdit('next_scenario')}
                 onChange={(v) => updateField('next_scenario', v)}
               />
+
+              <Separator />
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                  Диагностика и межсессионный фокус
+                </h4>
+                <MeetingTextField
+                  label="Установки консультанта (тезис | комментарий | статус)"
+                  value={formatInstallations(meeting.diagnostic_extension?.installations)}
+                  editable={canEdit('diagnostic_extension')}
+                  onChange={(v) => updateDiagnosticExtension({ installations: parseInstallations(v) })}
+                  rows={4}
+                />
+                <MeetingTextField
+                  label="Паттерны поведения (название | механика | статус)"
+                  value={formatPatterns(meeting.diagnostic_extension?.behavior_patterns)}
+                  editable={canEdit('diagnostic_extension')}
+                  onChange={(v) => updateDiagnosticExtension({ behavior_patterns: parsePatterns(v) })}
+                  rows={4}
+                />
+                <MeetingTextField
+                  label="Маркеры регресса (по строке)"
+                  value={(meeting.diagnostic_extension?.regression_markers ?? []).join('\n')}
+                  editable={canEdit('diagnostic_extension')}
+                  onChange={(v) => updateDiagnosticExtension({ regression_markers: splitLines(v) })}
+                  rows={3}
+                />
+                <MeetingTextField
+                  label="Гипотезы для проверки (по строке)"
+                  value={(meeting.diagnostic_extension?.verification_hypotheses ?? []).join('\n')}
+                  editable={canEdit('diagnostic_extension')}
+                  onChange={(v) => updateDiagnosticExtension({ verification_hypotheses: splitLines(v) })}
+                  rows={3}
+                />
+                <MeetingTextField
+                  label="Структурированные договорённости (текст | дедлайн | статус)"
+                  value={formatCommitments(meeting.diagnostic_extension?.commitments)}
+                  editable={canEdit('diagnostic_extension')}
+                  onChange={(v) => updateDiagnosticExtension({ commitments: parseCommitments(v) })}
+                  rows={4}
+                />
+              </div>
 
               {meeting.status === 'closed' && isAssistant && (
                 <div className="rounded-lg border border-violet-200 dark:border-violet-900 bg-violet-50/60 dark:bg-violet-950/25 px-4 py-3 space-y-2">
@@ -757,26 +963,100 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
   );
 }
 
+function splitLines(value: string): string[] {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function formatInstallations(
+  installations?: Array<{ thesis?: string; notes?: string; follow_up_status?: string }>
+): string {
+  if (!installations?.length) return '';
+  return installations
+    .map((item) => [item.thesis, item.notes, item.follow_up_status].filter(Boolean).join(' | '))
+    .join('\n');
+}
+
+function parseInstallations(value: string): Array<{ id: string; thesis: string; notes?: string; follow_up_status?: string }> {
+  return splitLines(value).map((line, i) => {
+    const [thesis = '', notes = '', followUp = ''] = line.split('|').map((part) => part.trim());
+    return {
+      id: `inst-${i + 1}`,
+      thesis,
+      notes: notes || undefined,
+      follow_up_status: followUp || undefined,
+    };
+  });
+}
+
+function formatPatterns(
+  patterns?: Array<{ name?: string; mechanics?: string; status?: string }>
+): string {
+  if (!patterns?.length) return '';
+  return patterns
+    .map((item) => [item.name, item.mechanics, item.status].filter(Boolean).join(' | '))
+    .join('\n');
+}
+
+function parsePatterns(value: string): Array<{ id: string; name: string; mechanics: string; status: string }> {
+  return splitLines(value).map((line, i) => {
+    const [name = '', mechanics = '', status = ''] = line.split('|').map((part) => part.trim());
+    return {
+      id: `pat-${i + 1}`,
+      name,
+      mechanics,
+      status,
+    };
+  });
+}
+
+function formatCommitments(
+  commitments?: Array<{ text?: string; due?: string; status?: string }>
+): string {
+  if (!commitments?.length) return '';
+  return commitments
+    .map((item) => [item.text, item.due, item.status].filter(Boolean).join(' | '))
+    .join('\n');
+}
+
+function parseCommitments(value: string): Array<{ text: string; due?: string; status?: string }> {
+  return splitLines(value).map((line) => {
+    const [text = '', due = '', status = ''] = line.split('|').map((part) => part.trim());
+    return {
+      text,
+      due: due || undefined,
+      status: status || undefined,
+    };
+  });
+}
+
 const COLLAPSE_THRESHOLD = 300;
 
 interface ExpandableFieldProps {
   label: React.ReactNode;
+  hint?: React.ReactNode;
+  placeholder?: string;
   value: string;
+  editable?: boolean;
+  onChange?: (value: string) => void;
 }
 
-function ExpandableField({ label, value }: ExpandableFieldProps) {
+function ExpandableField({ label, hint, placeholder, value, editable = false, onChange }: ExpandableFieldProps) {
   const [expanded, setExpanded] = useState(false);
   const needsCollapse = value.length > COLLAPSE_THRESHOLD;
+  const resolvedPlaceholder = placeholder ?? 'Текст контекста из предыдущих встреч…';
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <Label className="text-sm font-semibold text-gray-700">{label}</Label>
-        {needsCollapse && (
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-sm font-semibold text-gray-700 dark:text-gray-200">{label}</Label>
+        {needsCollapse && !editable && (
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+            className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors shrink-0"
           >
             {expanded ? (
               <><ChevronUp className="w-3.5 h-3.5" />Свернуть</>
@@ -786,20 +1066,33 @@ function ExpandableField({ label, value }: ExpandableFieldProps) {
           </button>
         )}
       </div>
-      <div className={`bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap relative ${needsCollapse && !expanded ? 'max-h-24 overflow-hidden' : ''}`}>
-        {value}
-        {needsCollapse && !expanded && (
-          <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-gray-50 dark:from-gray-800 to-transparent rounded-b-lg" />
-        )}
-      </div>
-      {needsCollapse && !expanded && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="w-full text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors py-0.5"
-        >
-          Показать полностью
-        </button>
+      {hint ? <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed -mt-0.5">{hint}</p> : null}
+      {editable && onChange ? (
+        <Textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={10}
+          className="text-sm resize-y min-h-[120px] font-mono"
+          placeholder={resolvedPlaceholder}
+        />
+      ) : (
+        <>
+          <div className={`bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap relative ${needsCollapse && !expanded ? 'max-h-24 overflow-hidden' : ''}`}>
+            {value || '—'}
+            {needsCollapse && !expanded && (
+              <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-gray-50 dark:from-gray-800 to-transparent rounded-b-lg" />
+            )}
+          </div>
+          {needsCollapse && !expanded && (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="w-full text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors py-0.5"
+            >
+              Показать полностью
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -813,10 +1106,37 @@ interface MeetingTextFieldProps {
   rows?: number;
   aiButton?: React.ReactNode;
   markdown?: boolean;
+  /** В режиме редактирования: сначала форматированный просмотр, кнопка переключает на сырой Markdown */
+  richMarkdownEdit?: boolean;
 }
 
-function MeetingTextField({ label, value, editable, onChange, rows = 4, aiButton, markdown = false }: MeetingTextFieldProps) {
+function MarkdownView({ value }: { value: string }) {
+  return (
+    <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:scroll-mt-20 prose-table:text-sm prose-th:border prose-td:border prose-table:border-collapse">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+    </div>
+  );
+}
+
+function MeetingTextField({
+  label,
+  value,
+  editable,
+  onChange,
+  rows = 4,
+  aiButton,
+  markdown = false,
+  richMarkdownEdit = false,
+}: MeetingTextFieldProps) {
   const [expanded, setExpanded] = useState(false);
+  const [rawMarkdownEdit, setRawMarkdownEdit] = useState(false);
+
+  useEffect(() => {
+    if (!editable) setRawMarkdownEdit(false);
+  }, [editable]);
+
+  const useRichToggle = Boolean(editable && richMarkdownEdit);
+  const showFormattedWhileEditing = useRichToggle && !rawMarkdownEdit && value.trim().length > 0;
   const needsCollapse = !editable && value.length > COLLAPSE_THRESHOLD;
 
   return (
@@ -840,20 +1160,36 @@ function MeetingTextField({ label, value, editable, onChange, rows = 4, aiButton
           {aiButton}
         </div>
       </div>
-      {editable ? (
-        <Textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          rows={rows}
-          className="text-sm resize-y"
-        />
-      ) : (
+      {editable && showFormattedWhileEditing ? (
+        <div className="space-y-2">
+          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm text-gray-700 dark:text-gray-300 min-h-[60px]">
+            <MarkdownView value={value} />
+          </div>
+          <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setRawMarkdownEdit(true)}>
+            Редактировать (Markdown)
+          </Button>
+        </div>
+      ) : null}
+      {editable && (!showFormattedWhileEditing) ? (
+        <div className="space-y-2">
+          <Textarea
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            rows={rows}
+            className="text-sm resize-y font-mono"
+            placeholder="Текст в формате Markdown…"
+          />
+          {useRichToggle && value.trim().length > 0 ? (
+            <Button type="button" variant="secondary" size="sm" className="h-8 text-xs" onClick={() => setRawMarkdownEdit(false)}>
+              Просмотр с форматированием
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {!editable ? (
         value ? (
           <div className={`bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm text-gray-700 dark:text-gray-300 relative ${needsCollapse && !expanded ? 'max-h-24 overflow-hidden' : 'min-h-[60px]'} ${markdown ? '' : 'whitespace-pre-wrap'}`}>
-            {markdown
-              ? <div className="prose prose-sm dark:prose-invert max-w-none"><ReactMarkdown>{value}</ReactMarkdown></div>
-              : value
-            }
+            {markdown ? <MarkdownView value={value} /> : value}
             {needsCollapse && !expanded && (
               <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-gray-50 dark:from-gray-800 to-transparent rounded-b-lg" />
             )}
@@ -861,7 +1197,7 @@ function MeetingTextField({ label, value, editable, onChange, rows = 4, aiButton
         ) : (
           <p className="text-sm text-gray-400 dark:text-gray-600 italic">—</p>
         )
-      )}
+      ) : null}
       {needsCollapse && !expanded && (
         <button
           type="button"

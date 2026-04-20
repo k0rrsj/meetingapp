@@ -19,7 +19,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
 
-  const { preferred_model } = await request.json();
+  const { preferred_model, telegram_chat_id } = await request.json();
 
   if (!preferred_model) {
     return NextResponse.json({ error: 'preferred_model обязателен' }, { status: 400 });
@@ -35,15 +35,15 @@ export async function PATCH(request: NextRequest) {
   if (existing) {
     result = await supabase
       .from('ai_settings')
-      .update({ preferred_model })
+      .update({ preferred_model, telegram_chat_id: telegram_chat_id?.trim() || null })
       .eq('user_id', user.id)
-      .select('preferred_model, updated_at')
+      .select('preferred_model, telegram_chat_id, updated_at')
       .single();
   } else {
     result = await supabase
       .from('ai_settings')
-      .insert({ user_id: user.id, preferred_model })
-      .select('preferred_model, updated_at')
+      .insert({ user_id: user.id, preferred_model, telegram_chat_id: telegram_chat_id?.trim() || null })
+      .select('preferred_model, telegram_chat_id, updated_at')
       .single();
   }
 

@@ -64,11 +64,28 @@ export function buildScenarioPrompt(
       ? `Номер предстоящей встречи: ${meetingNumber}.${fromThird ? ' Применяй правила для встречи №3 и далее (приоритет топ-2 сюжетов, дедлайн и формат отчёта по каждой договорённости).' : ''}`
       : '';
 
-  const user = `${previousContextText
-    ? `Контекст предыдущих встреч:\n${previousContextText}`
-    : 'Предыдущих встреч нет — это первая сессия с данным руководителем.'}
+  const trimmedPrev = previousContextText?.trim() ?? '';
+  const isFirstMeeting = meetingNumber === 1;
 
-${meetingLine ? `${meetingLine}\n` : ''}${profileLines.length > 0 ? `Дополнительный профиль:\n${profileLines.join('\n')}` : ''}
+  let contextIntro: string;
+  if (trimmedPrev) {
+    contextIntro = isFirstMeeting
+      ? `Вводной контекст перед первой сессией (факты до трека, не из прошлых встреч):\n${trimmedPrev}`
+      : `Контекст предыдущих встреч:\n${trimmedPrev}`;
+  } else if (isFirstMeeting) {
+    contextIntro =
+      'Это первая сессия с данным руководителем: прошлых встреч в треке ещё нет. Опирайся на профиль руководителя и методологию выше; вводной текст консультант мог не заполнять — этого достаточно.';
+  } else {
+    contextIntro = 'Предыдущих встреч нет — это первая сессия с данным руководителем.';
+  }
+
+  const firstMeetingHint = isFirstMeeting
+    ? '\n\nУчти: это первая встреча — формальных договорённостей с прошлых сессий ещё нет; во 2-м блоке сценария сфокусируйся на ожиданиях, запросе директора и договорённостях «на старт», если они есть во вводном контексте или профиле.'
+    : '';
+
+  const user = `${contextIntro}
+
+${meetingLine ? `${meetingLine}\n` : ''}${profileLines.length > 0 ? `Дополнительный профиль:\n${profileLines.join('\n')}` : ''}${firstMeetingHint}
 
 Подготовь сценарий сессии по структуре выше.`;
 

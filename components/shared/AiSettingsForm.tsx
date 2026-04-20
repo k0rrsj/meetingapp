@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import type { AvailableModel } from '@/types';
@@ -9,6 +10,7 @@ import type { AvailableModel } from '@/types';
 interface AiSettingsFormProps {
   models: AvailableModel[];
   currentModel: string;
+  currentTelegramChatId: string | null;
 }
 
 const MODEL_PRICES: Record<string, string> = {
@@ -18,8 +20,9 @@ const MODEL_PRICES: Record<string, string> = {
   'google/gemini-pro-1.5': '~$0.004/запрос',
 };
 
-export function AiSettingsForm({ models, currentModel }: AiSettingsFormProps) {
+export function AiSettingsForm({ models, currentModel, currentTelegramChatId }: AiSettingsFormProps) {
   const [selected, setSelected] = useState(currentModel);
+  const [telegramChatId, setTelegramChatId] = useState(currentTelegramChatId ?? '');
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -28,7 +31,7 @@ export function AiSettingsForm({ models, currentModel }: AiSettingsFormProps) {
       const res = await fetch('/api/ai/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferred_model: selected }),
+        body: JSON.stringify({ preferred_model: selected, telegram_chat_id: telegramChatId.trim() || null }),
       });
 
       if (res.ok) {
@@ -78,6 +81,21 @@ export function AiSettingsForm({ models, currentModel }: AiSettingsFormProps) {
             </label>
           ))}
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="telegram-chat-id" className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+          Telegram chat ID
+        </Label>
+        <Input
+          id="telegram-chat-id"
+          value={telegramChatId}
+          onChange={(e) => setTelegramChatId(e.target.value)}
+          placeholder="Например: 123456789"
+        />
+        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+          Нужен для кнопки «Отправить в Telegram». Откройте вашего бота в Telegram, отправьте /start и получите chat ID через @userinfobot.
+        </p>
       </div>
 
       <Button onClick={handleSave} disabled={saving}>

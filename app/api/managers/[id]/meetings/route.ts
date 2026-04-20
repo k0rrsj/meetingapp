@@ -44,7 +44,7 @@ export async function POST(
     .eq('id', user.id)
     .single();
 
-  if (profile?.role !== 'assistant') {
+  if (profile?.role !== 'assistant' && profile?.role !== 'consultant') {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
 
@@ -127,6 +127,8 @@ export async function POST(
       previous_context_json: previousContextJson,
       context_from_unclosed: contextFromUnclosed,
       scenario: null,
+      scenario_approved_at: null,
+      first_meeting_scenario_mode: lastMeetingNumber === 0 ? 'ai' : null,
       transcription_prompt: null,
     })
     .select()

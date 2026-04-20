@@ -12,6 +12,9 @@ export interface OpenRouterOptions {
   temperature?: number;
 }
 
+/** Достаточный запас для 4 блоков сценария на русском (раньше 3000 обрезало фиксацию). */
+export const SCENARIO_OUTPUT_MAX_TOKENS = 12_000;
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -60,6 +63,12 @@ export async function callOpenRouter(options: OpenRouterOptions): Promise<string
       system: systemMessage || undefined,
       messages: anthropicMessages,
     });
+
+    if (response.stop_reason === 'max_tokens') {
+      console.warn(
+        '[callOpenRouter] Ответ обрезан по max_tokens — увеличьте max_tokens или сократите промпт.',
+      );
+    }
 
     const content = response.content[0];
     if (!content || content.type !== 'text') {

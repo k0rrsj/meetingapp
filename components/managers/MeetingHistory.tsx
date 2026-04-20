@@ -22,6 +22,7 @@ export function MeetingHistory({ meetings, managerId, managerName = '', currentU
   const [localMeetings, setLocalMeetings] = useState(meetings);
 
   const isAssistant = userRole === 'assistant';
+  const canCreateMeeting = isAssistant || userRole === 'consultant';
 
   async function handleCreateMeeting() {
     setCreating(true);
@@ -53,7 +54,7 @@ export function MeetingHistory({ meetings, managerId, managerName = '', currentU
     <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">История встреч</h3>
-        {isAssistant && (
+        {canCreateMeeting && (
           <Button size="sm" onClick={handleCreateMeeting} disabled={creating}>
             {creating ? (
               <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
@@ -70,7 +71,7 @@ export function MeetingHistory({ meetings, managerId, managerName = '', currentU
           <Calendar className="w-10 h-10 text-gray-300 dark:text-gray-700 mb-3" />
           <h4 className="text-gray-600 dark:text-gray-400 font-medium mb-1">Встреч ещё нет</h4>
           <p className="text-sm text-gray-400 dark:text-gray-500">
-            {isAssistant ? 'Создайте первую встречу' : 'Встречи появятся после создания'}
+            {canCreateMeeting ? 'Создайте первую встречу' : 'Встречи появятся после создания ассистентом'}
           </p>
         </div>
       ) : (

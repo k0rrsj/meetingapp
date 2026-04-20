@@ -1,11 +1,20 @@
 const TELEGRAM_API = 'https://api.telegram.org/bot';
+const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
 
 export async function sendTelegramMessage(text: string): Promise<void> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) {
+    console.warn('[Telegram] TELEGRAM_CHAT_ID not set — skipping notification');
+    return;
+  }
+  await sendTelegramMessageToChat(chatId, text);
+}
 
-  if (!token || !chatId) {
-    console.warn('[Telegram] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set — skipping notification');
+export async function sendTelegramMessageToChat(chatId: string, text: string): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+
+  if (!token) {
+    console.warn('[Telegram] TELEGRAM_BOT_TOKEN not set — skipping notification');
     return;
   }
 
@@ -23,6 +32,37 @@ export async function sendTelegramMessage(text: string): Promise<void> {
     const err = await res.text();
     throw new Error(`Telegram API error: ${res.status} ${err}`);
   }
+}
+
+export function escapeTelegramHtml(raw: string): string {
+  return raw
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+export function splitTelegramMessage(text: string, maxLength = TELEGRAM_MAX_MESSAGE_LENGTH): string[] {
+  if (text.length <= maxLength) {
+    return [text];
+  }
+
+  const parts: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > maxLength) {
+    const candidate = remaining.slice(0, maxLength);
+    const splitIdx = Math.max(candidate.lastIndexOf('\n\n'), candidate.lastIndexOf('\n'));
+    const idx = splitIdx > maxLength * 0.5 ? splitIdx : maxLength;
+    const head = remaining.slice(0, idx).trimEnd();
+    parts.push(head);
+    remaining = remaining.slice(idx).trimStart();
+  }
+
+  if (remaining.length > 0) {
+    parts.push(remaining);
+  }
+
+  return parts;
 }
 
 export function formatSessionNotification(

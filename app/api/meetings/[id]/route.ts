@@ -1,16 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import type { MeetingStatus } from '@/types';
+import type { MeetingStatus, UserRole } from '@/types';
 
-const STATUS_EDITABLE_FIELDS: Record<MeetingStatus, string[]> = {
-  preparation: ['date', 'scenario', 'transcription_prompt'],
-  conducted: ['date', 'transcription_text', 'transcription_file_url'],
+const STATUS_EDITABLE_FIELDS_ASSISTANT: Record<MeetingStatus, string[]> = {
+  preparation: ['date', 'scenario', 'scenario_approved_at', 'first_meeting_scenario_mode', 'transcription_prompt', 'previous_context_text', 'previous_context_json'],
+  conducted: ['date', 'transcription_text', 'transcription_file_url', 'previous_context_text', 'previous_context_json'],
   processed: [
     'key_facts', 'problems_signals', 'conclusions',
     'strengths', 'weaknesses', 'action_plan', 'next_scenario',
+    'diagnostic_extension',
+    'previous_context_text', 'previous_context_json',
   ],
   closed: [],
 };
+
+/** Consultant: prep materials + context; context also in later statuses */
+const STATUS_EDITABLE_FIELDS_CONSULTANT: Record<MeetingStatus, string[]> = {
+  preparation: ['date', 'scenario', 'scenario_approved_at', 'first_meeting_scenario_mode', 'transcription_prompt', 'previous_context_text', 'previous_context_json'],
+  conducted: ['previous_context_text', 'previous_context_json'],
+  processed: ['previous_context_text', 'previous_context_json', 'diagnostic_extension'],
+  closed: [],
+};
+
+function allowedFieldsForRole(role: UserRole | undefined, status: MeetingStatus): string[] {
+  if (role === 'consultant') return STATUS_EDITABLE_FIELDS_CONSULTANT[status] ?? [];
+  if (role === 'assistant') return STATUS_EDITABLE_FIELDS_ASSISTANT[status] ?? [];
+  return [];
+}
 
 export async function GET(
   _request: NextRequest,
@@ -84,13 +100,14 @@ export async function PATCH(
     .eq('id', user.id)
     .single();
 
-  if (profile?.role !== 'assistant') {
+  const role = profile?.role as UserRole | undefined;
+  if (role !== 'assistant' && role !== 'consultant') {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
 
   const { data: meeting } = await supabase
     .from('meetings')
-    .select('status')
+    .select('status, meeting_number')
     .eq('id', id)
     .single();
 
@@ -99,7 +116,7 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const allowedFields = STATUS_EDITABLE_FIELDS[meeting.status as MeetingStatus] ?? [];
+  const allowedFields = allowedFieldsForRole(role, meeting.status as MeetingStatus);
   const updates: Record<string, unknown> = {};
 
   for (const field of Object.keys(body)) {
@@ -110,6 +127,31 @@ export async function PATCH(
       );
     }
     updates[field] = body[field];
+  }
+
+  if ('previous_context_text' in updates && !('previous_context_json' in body)) {
+    updates.previous_context_json = null;
+  }
+
+  if ('first_meeting_scenario_mode' in updates) {
+    if (meeting.meeting_number !== 1) {
+      return NextResponse.json(
+        { error: "Поле 'first_meeting_scenario_mode' доступно только для первой встречи" },
+        { status: 400 }
+      );
+    }
+    const mode = updates.first_meeting_scenario_mode;
+    if (mode !== 'manual' && mode !== 'ai') {
+      return NextResponse.json(
+        { error: "first_meeting_scenario_mode должен быть 'manual' или 'ai'" },
+        { status: 400 }
+      );
+    }
+  }
+
+  // If scenario text changes, approval must be reset unless caller explicitly sets scenario_approved_at.
+  if ('scenario' in updates && !('scenario_approved_at' in updates)) {
+    updates.scenario_approved_at = null;
   }
 
   if (Object.keys(updates).length === 0) {
