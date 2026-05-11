@@ -27,7 +27,7 @@ export function ManagersList({ managers: initialManagers, companyId, userRole }:
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
-  const isAssistant = userRole === 'assistant';
+  const isAssistant = userRole === 'assistant' || userRole === 'consultant';
 
   async function handleDelete(id: string, e: React.MouseEvent) {
     e.preventDefault();

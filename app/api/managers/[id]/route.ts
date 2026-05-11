@@ -54,7 +54,7 @@ export async function DELETE(
     .eq('id', user.id)
     .single();
 
-  if (profile?.role !== 'assistant') {
+  if (profile?.role !== 'assistant' && profile?.role !== 'consultant') {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
 
@@ -91,32 +91,20 @@ export async function PATCH(
   const body = await request.json();
   const role = profile?.role;
 
-  let updates: Record<string, unknown> = {};
-
-  if (role === 'consultant') {
-    // Consultant can only update consultant_comments
-    if (body.consultant_comments !== undefined) {
-      updates.consultant_comments = body.consultant_comments;
-    } else {
-      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
-    }
-  } else if (role === 'assistant') {
-    // Assistant can update all fields except consultant_comments
-    const allowedFields = [
-      'name', 'position', 'role_in_team', 'context', 'director_request',
-      'strengths', 'weaknesses', 'work_type', 'status',
-    ];
-    allowedFields.forEach((field) => {
-      if (body[field] !== undefined) {
-        updates[field] = body[field];
-      }
-    });
-    if (body.consultant_comments !== undefined) {
-      return NextResponse.json({ error: 'Недостаточно прав для изменения этого поля' }, { status: 403 });
-    }
-  } else {
+  if (role !== 'assistant' && role !== 'consultant') {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
+
+  const allowedFields = [
+    'name', 'position', 'role_in_team', 'context', 'director_request',
+    'strengths', 'weaknesses', 'work_type', 'status', 'consultant_comments',
+  ];
+  const updates: Record<string, unknown> = {};
+  allowedFields.forEach((field) => {
+    if (body[field] !== undefined) {
+      updates[field] = body[field];
+    }
+  });
 
   const { data: manager, error } = await supabase
     .from('managers')

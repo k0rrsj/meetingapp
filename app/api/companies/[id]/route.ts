@@ -19,7 +19,7 @@ export async function PATCH(
     .eq('id', user.id)
     .single();
 
-  if (profile?.role !== 'assistant') {
+  if (profile?.role !== 'assistant' && profile?.role !== 'consultant') {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
 

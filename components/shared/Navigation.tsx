@@ -45,7 +45,7 @@ export function Navigation({ user }: NavigationProps) {
             </span>
           </span>
 
-          {user.role === 'consultant' && (
+          {(user.role === 'consultant' || user.role === 'assistant') && (
             <Link href="/settings" className="inline-flex items-center justify-center h-8 w-8 rounded-md text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 transition-colors">
               <Settings className="w-4 h-4" />
             </Link>

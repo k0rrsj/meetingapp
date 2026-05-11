@@ -143,7 +143,7 @@ export function ManagerTrackPanel({ managerId, managerName, userRole }: ManagerT
     );
   }
 
-  const canEdit = userRole === 'assistant';
+  const canEdit = userRole === 'assistant' || userRole === 'consultant';
 
   return (
     <div className="space-y-4">

@@ -44,8 +44,8 @@ export function ManagerProfile({ manager: initialManager, companyId, currentUser
   const [commentsText, setCommentsText] = useState(manager.consultant_comments ?? '');
   const [saving, setSaving] = useState(false);
 
-  const isAssistant = userRole === 'assistant';
-  const isConsultant = userRole === 'consultant';
+  const isAssistant = userRole === 'assistant' || userRole === 'consultant';
+  const isConsultant = userRole === 'consultant' || userRole === 'assistant';
 
   async function saveProfile() {
     setSaving(true);

@@ -61,7 +61,7 @@ export default async function CompaniesPage() {
     .eq('id', user!.id)
     .single();
 
-  const isAssistant = profile?.role === 'assistant';
+  const isAssistant = profile?.role === 'assistant' || profile?.role === 'consultant';
   const companies = await getCompaniesWithMetrics(supabase);
 
   return (

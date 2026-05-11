@@ -77,7 +77,7 @@ export default async function ManagersPage({ params }: PageProps) {
             {managersWithMetrics.length} руководителей
           </p>
         </div>
-        {userRole === 'assistant' && <AddManagerDialog companyId={companyId} />}
+        {(userRole === 'assistant' || userRole === 'consultant') && <AddManagerDialog companyId={companyId} />}
       </div>
 
       <CompanyTabs

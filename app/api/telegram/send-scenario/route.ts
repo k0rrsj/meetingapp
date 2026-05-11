@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import {
-  escapeTelegramHtml,
-  sendTelegramMessageToChat,
-  splitTelegramMessage,
-} from '@/lib/telegram';
+import { sendTelegramDocument } from '@/lib/telegram';
+import { generateScenarioPdf } from '@/lib/scenario-pdf';
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -55,13 +52,12 @@ export async function POST(request: NextRequest) {
     `для ${managerName}`,
   ].filter(Boolean).join(' ');
 
-  const content = `<b>${escapeTelegramHtml(title)}</b>\n\n${escapeTelegramHtml(meeting.scenario)}`;
-  const parts = splitTelegramMessage(content);
+  const pdfBuffer = await generateScenarioPdf(title, meeting.scenario);
 
-  for (let i = 0; i < parts.length; i += 1) {
-    const prefix = parts.length > 1 ? `<b>Часть ${i + 1}/${parts.length}</b>\n` : '';
-    await sendTelegramMessageToChat(chatId, `${prefix}${parts[i]}`);
-  }
+  const safeName = managerName.replace(/[^\wа-яёА-ЯЁ]/gi, '_');
+  const filename = `scenario_${meeting.meeting_number}_${safeName}.pdf`;
 
-  return NextResponse.json({ success: true, parts: parts.length });
+  await sendTelegramDocument(chatId, pdfBuffer, filename);
+
+  return NextResponse.json({ success: true });
 }

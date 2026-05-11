@@ -16,7 +16,7 @@ export default async function SettingsPage() {
     .eq('id', user.id)
     .single();
 
-  if (profile?.role !== 'consultant') {
+  if (profile?.role !== 'consultant' && profile?.role !== 'assistant') {
     redirect('/companies');
   }
 

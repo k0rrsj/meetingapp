@@ -66,10 +66,10 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef<Record<string, unknown>>({});
 
-  const isAssistant = userRole === 'assistant';
-  const isConsultant = userRole === 'consultant';
+  const isAssistant = userRole === 'assistant' || userRole === 'consultant';
+  const isConsultant = userRole === 'consultant' || userRole === 'assistant';
 
-  const assistantFields: Record<MeetingStatus, string[]> = {
+  const editableFields: Record<MeetingStatus, string[]> = {
     preparation: ['date', 'scenario', 'scenario_approved_at', 'first_meeting_scenario_mode', 'transcription_prompt', 'previous_context_text', 'previous_context_json'],
     conducted: ['date', 'transcription_text', 'transcription_file_url', 'previous_context_text', 'previous_context_json'],
     processed: [
@@ -79,17 +79,8 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
     closed: [],
   };
 
-  const consultantFields: Record<MeetingStatus, string[]> = {
-    preparation: ['date', 'scenario', 'scenario_approved_at', 'first_meeting_scenario_mode', 'transcription_prompt', 'previous_context_text', 'previous_context_json'],
-    conducted: ['previous_context_text', 'previous_context_json'],
-    processed: ['previous_context_text', 'previous_context_json'],
-    closed: [],
-  };
-
   const canEdit = (field: string): boolean => {
-    if (isAssistant) return assistantFields[meeting.status]?.includes(field) ?? false;
-    if (isConsultant) return consultantFields[meeting.status]?.includes(field) ?? false;
-    return false;
+    return editableFields[meeting.status]?.includes(field) ?? false;
   };
 
   const saveField = useCallback((field: string, value: unknown) => {

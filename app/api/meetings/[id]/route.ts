@@ -14,17 +14,8 @@ const STATUS_EDITABLE_FIELDS_ASSISTANT: Record<MeetingStatus, string[]> = {
   closed: [],
 };
 
-/** Consultant: prep materials + context; context also in later statuses */
-const STATUS_EDITABLE_FIELDS_CONSULTANT: Record<MeetingStatus, string[]> = {
-  preparation: ['date', 'scenario', 'scenario_approved_at', 'first_meeting_scenario_mode', 'transcription_prompt', 'previous_context_text', 'previous_context_json'],
-  conducted: ['previous_context_text', 'previous_context_json'],
-  processed: ['previous_context_text', 'previous_context_json', 'diagnostic_extension'],
-  closed: [],
-};
-
 function allowedFieldsForRole(role: UserRole | undefined, status: MeetingStatus): string[] {
-  if (role === 'consultant') return STATUS_EDITABLE_FIELDS_CONSULTANT[status] ?? [];
-  if (role === 'assistant') return STATUS_EDITABLE_FIELDS_ASSISTANT[status] ?? [];
+  if (role === 'assistant' || role === 'consultant') return STATUS_EDITABLE_FIELDS_ASSISTANT[status] ?? [];
   return [];
 }
 
@@ -66,7 +57,7 @@ export async function DELETE(
     .eq('id', user.id)
     .single();
 
-  if (profile?.role !== 'assistant') {
+  if (profile?.role !== 'assistant' && profile?.role !== 'consultant') {
     return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 });
   }
 

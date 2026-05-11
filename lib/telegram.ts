@@ -10,7 +10,7 @@ export async function sendTelegramMessage(text: string): Promise<void> {
   await sendTelegramMessageToChat(chatId, text);
 }
 
-export async function sendTelegramMessageToChat(chatId: string, text: string): Promise<void> {
+export async function sendTelegramMessageToChat(chatId: string, text: string, html = true): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
 
   if (!token) {
@@ -18,14 +18,41 @@ export async function sendTelegramMessageToChat(chatId: string, text: string): P
     return;
   }
 
+  const body: Record<string, unknown> = { chat_id: chatId, text };
+  if (html) body.parse_mode = 'HTML';
+
   const res = await fetch(`${TELEGRAM_API}${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: 'HTML',
-    }),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Telegram API error: ${res.status} ${err}`);
+  }
+}
+
+export async function sendTelegramDocument(
+  chatId: string,
+  buffer: Buffer,
+  filename: string,
+  caption?: string,
+): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.warn('[Telegram] TELEGRAM_BOT_TOKEN not set — skipping notification');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('chat_id', chatId);
+  formData.append('document', new Blob([buffer], { type: 'application/pdf' }), filename);
+  if (caption) formData.append('caption', caption);
+
+  const res = await fetch(`${TELEGRAM_API}${token}/sendDocument`, {
+    method: 'POST',
+    body: formData,
   });
 
   if (!res.ok) {
