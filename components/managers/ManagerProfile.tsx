@@ -11,6 +11,7 @@ import { CommentsList } from '@/components/comments/CommentsList';
 import { Badge } from '@/components/ui/badge';
 import { Pencil, Check, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ManagerProblemsPanel } from './ManagerProblemsPanel';
 import type { Manager, UserRole } from '@/types';
 
 interface ManagerProfileProps {
@@ -235,6 +236,11 @@ export function ManagerProfile({ manager: initialManager, companyId, currentUser
             onChange={(v) => setProfileForm((p) => ({ ...p, weaknesses: v }))}
           />
         </div>
+
+        <Separator />
+
+        {/* Problems tracker */}
+        <ManagerProblemsPanel managerId={manager.id} />
 
         <Separator />
 

@@ -189,9 +189,44 @@ export interface AiSettings {
   id: string;
   user_id: string;
   preferred_model: string;
+  scenario_model: string | null;
+  analysis_model: string | null;
+  chat_model: string | null;
   telegram_chat_id: string | null;
+  meeting_reminder_enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// ============================================================
+// Manager problems
+// ============================================================
+
+export type ProblemStatus = 'active' | 'resolved';
+export type ProblemSource = 'ai' | 'manual';
+
+export interface ManagerProblem {
+  id: string;
+  manager_id: string;
+  text: string;
+  status: ProblemStatus;
+  source: ProblemSource;
+  first_seen_meeting_id: string | null;
+  resolved_meeting_id: string | null;
+  meeting_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProblemDeltaAction = 'new' | 'ongoing' | 'resolved';
+
+export interface ProblemDeltaItem {
+  action: ProblemDeltaAction;
+  // For 'new': text is required, problem_id is absent
+  text?: string;
+  // For 'ongoing' and 'resolved': problem_id is required
+  problem_id?: string;
+  resolution_note?: string;
 }
 
 export type DocumentType = 'track' | 'roadmap' | 'chronology' | 'other';
@@ -350,7 +385,11 @@ export interface AiGenerateRequest {
 
 export interface AiSettingsUpdateRequest {
   preferred_model: string;
+  scenario_model?: string | null;
+  analysis_model?: string | null;
+  chat_model?: string | null;
   telegram_chat_id?: string | null;
+  meeting_reminder_enabled?: boolean;
 }
 
 export interface AvailableModel {

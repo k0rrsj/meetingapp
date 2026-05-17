@@ -22,11 +22,11 @@ export default async function SettingsPage() {
 
   const { data: aiSettings } = await supabase
     .from('ai_settings')
-    .select('preferred_model, telegram_chat_id')
+    .select('preferred_model, scenario_model, analysis_model, chat_model, telegram_chat_id, meeting_reminder_enabled')
     .eq('user_id', user.id)
     .single();
 
-  const currentModel = aiSettings?.preferred_model ?? 'anthropic/claude-opus-4-5';
+  const defaultModel = aiSettings?.preferred_model ?? 'anthropic/claude-opus-4-5';
 
   return (
     <div className="max-w-2xl space-y-10">
@@ -34,8 +34,11 @@ export default async function SettingsPage() {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Настройки AI</h1>
         <AiSettingsForm
           models={AVAILABLE_MODELS}
-          currentModel={currentModel}
+          currentScenarioModel={aiSettings?.scenario_model ?? defaultModel}
+          currentAnalysisModel={aiSettings?.analysis_model ?? defaultModel}
+          currentChatModel={aiSettings?.chat_model ?? defaultModel}
           currentTelegramChatId={aiSettings?.telegram_chat_id ?? null}
+          currentReminderEnabled={aiSettings?.meeting_reminder_enabled ?? true}
         />
       </div>
 

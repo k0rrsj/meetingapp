@@ -1,59 +1,136 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServiceClient } from '@/lib/supabase/server';
-import { sendTelegramMessage } from '@/lib/telegram';
+import { createClient } from '@/lib/supabase/server';
 
-export async function POST(request: NextRequest) {
-  const body = await request.json();
-
-  const message = body?.message;
-  if (!message?.text) return NextResponse.json({ ok: true });
-
-  const text: string = message.text.trim();
-
-  const supabase = createServiceClient();
-
-  // Find managers whose name appears in the message
-  const { data: managers } = await supabase
-    .from('managers')
-    .select('id, name, company_id');
-
-  let targetManagerId: string | null = null;
-  let eventText = text;
-
-  if (managers) {
-    for (const manager of managers) {
-      const nameParts = manager.name.split(' ');
-      const firstName = nameParts[0];
-      if (text.toLowerCase().includes(manager.name.toLowerCase()) || text.toLowerCase().includes(firstName.toLowerCase())) {
-        targetManagerId = manager.id;
-        // Strip the name prefix if present (e.g. "Ксения: текст")
-        const colonIdx = text.indexOf(':');
-        if (colonIdx > -1 && colonIdx < 50) {
-          eventText = text.slice(colonIdx + 1).trim();
-        }
-        break;
-      }
-    }
+/**
+ * Telegram Webhook endpoint.
+ * Register once after deploy:
+ *   POST https://api.telegram.org/bot{TOKEN}/setWebhook
+ *   body: { "url": "https://your-app.vercel.app/api/telegram/webhook" }
+ *
+ * Handles:
+ *  - callback_query with data "resolve_problem:{problemId}" — marks problem as resolved
+ */
+export async function POST(req: NextRequest) {
+  let body: TelegramUpdate;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false }, { status: 400 });
   }
 
-  if (!targetManagerId) {
-    await sendTelegramMessage(
-      `❌ Не удалось определить руководителя из сообщения.\n\nФормат: "Имя руководителя: текст события"`
-    ).catch(() => {});
-    return NextResponse.json({ ok: true });
+  if (body.callback_query) {
+    await handleCallbackQuery(body.callback_query);
   }
 
-  const { error } = await supabase.from('interim_events').insert({
-    manager_id: targetManagerId,
-    text: eventText,
-    source: 'telegram',
-  });
-
-  if (error) {
-    await sendTelegramMessage(`❌ Ошибка сохранения: ${error.message}`).catch(() => {});
-  } else {
-    await sendTelegramMessage(`✅ Событие добавлено в карточку руководителя.`).catch(() => {});
-  }
-
+  // Always return 200 to prevent Telegram from retrying
   return NextResponse.json({ ok: true });
+}
+
+async function handleCallbackQuery(query: TelegramCallbackQuery) {
+  const data = query.data ?? '';
+  const callbackQueryId = query.id;
+  const chatId = query.message?.chat?.id?.toString();
+
+  if (!data.startsWith('resolve_problem:') || !chatId) {
+    await answerCallbackQuery(callbackQueryId, '');
+    return;
+  }
+
+  const problemId = data.replace('resolve_problem:', '');
+
+  const supabase = await createClient();
+
+  const { data: problem, error } = await supabase
+    .from('manager_problems')
+    .update({ status: 'resolved', resolved_meeting_id: null })
+    .eq('id', problemId)
+    .select('text, manager_id')
+    .single();
+
+  if (error || !problem) {
+    await answerCallbackQuery(callbackQueryId, '❌ Проблема не найдена или уже закрыта.');
+    return;
+  }
+
+  // Notify user
+  await answerCallbackQuery(callbackQueryId, `✅ Закрыто: ${problem.text.slice(0, 200)}`);
+
+  // Update the inline keyboard: replace the resolved button with a struck-through label
+  if (query.message?.message_id) {
+    await editCallbackButton(
+      chatId,
+      query.message.message_id,
+      query.message.reply_markup,
+      data,
+    );
+  }
+}
+
+async function answerCallbackQuery(callbackQueryId: string, text: string): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+
+  await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      callback_query_id: callbackQueryId,
+      text: text || undefined,
+      show_alert: text.length > 0,
+    }),
+  });
+}
+
+async function editCallbackButton(
+  chatId: string,
+  messageId: number,
+  replyMarkup: TelegramInlineKeyboardMarkup | undefined,
+  resolvedCallbackData: string,
+): Promise<void> {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || !replyMarkup) return;
+
+  // Replace the resolved button text, disable it
+  const updatedKeyboard = replyMarkup.inline_keyboard.map((row) =>
+    row.map((btn) =>
+      btn.callback_data === resolvedCallbackData
+        ? { text: `☑️ Закрыта`, callback_data: 'noop' }
+        : btn,
+    ),
+  );
+
+  await fetch(`https://api.telegram.org/bot${token}/editMessageReplyMarkup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: updatedKeyboard },
+    }),
+  });
+}
+
+// ============================================================
+// Telegram Update types (minimal subset)
+// ============================================================
+
+interface TelegramUpdate {
+  update_id: number;
+  callback_query?: TelegramCallbackQuery;
+}
+
+interface TelegramCallbackQuery {
+  id: string;
+  data?: string;
+  message?: TelegramMessage;
+}
+
+interface TelegramMessage {
+  message_id: number;
+  chat: { id: number };
+  reply_markup?: TelegramInlineKeyboardMarkup;
+}
+
+interface TelegramInlineKeyboardMarkup {
+  inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
 }
