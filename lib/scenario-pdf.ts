@@ -6,7 +6,7 @@ const pdfmakeInst = require('pdfmake/js') as {
   addFonts: (fonts: Record<string, unknown>) => void;
   setUrlAccessPolicy: (fn: () => boolean) => void;
   setLocalAccessPolicy: (fn: () => boolean) => void;
-  createPdf: (def: TDocumentDefinitions) => { getStream: () => Promise<Readable> };
+  createPdf: (def: TDocumentDefinitions) => { getStream: () => Promise<Readable & { end: () => void }> };
 };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const virtualfs = require('pdfmake/js/virtual-fs').default as {

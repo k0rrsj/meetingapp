@@ -31,7 +31,7 @@ export default async function DashboardLayout({
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <Navigation user={userProfile} />
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main className="max-w-[1600px] mx-auto px-4 lg:px-6 py-6">
         {children}
       </main>
     </div>

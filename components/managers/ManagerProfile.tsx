@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Pencil, Check, X, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ManagerProblemsPanel } from './ManagerProblemsPanel';
+import { ProfileChangelog } from './ProfileChangelog';
 import type { Manager, UserRole } from '@/types';
 
 interface ManagerProfileProps {
@@ -44,6 +45,24 @@ export function ManagerProfile({ manager: initialManager, companyId, currentUser
   });
   const [commentsText, setCommentsText] = useState(manager.consultant_comments ?? '');
   const [saving, setSaving] = useState(false);
+
+  // Keep the "living" profile in sync with server data refreshed after a meeting
+  // is closed (router.refresh). We never clobber values while the user is editing.
+  useEffect(() => {
+    if (editingProfile || editingComments) return;
+    setManager(initialManager);
+    setProfileForm({
+      name: initialManager.name,
+      position: initialManager.position ?? '',
+      role_in_team: initialManager.role_in_team ?? '',
+      context: initialManager.context ?? '',
+      director_request: initialManager.director_request ?? '',
+      strengths: initialManager.strengths ?? '',
+      weaknesses: initialManager.weaknesses ?? '',
+    });
+    setCommentsText(initialManager.consultant_comments ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialManager.id, initialManager.updated_at]);
 
   const isAssistant = userRole === 'assistant' || userRole === 'consultant';
   const isConsultant = userRole === 'consultant' || userRole === 'assistant';
@@ -297,6 +316,11 @@ export function ManagerProfile({ manager: initialManager, companyId, currentUser
             currentUserId={currentUserId}
           />
         </div>
+
+        <Separator />
+
+        {/* Living-profile changelog */}
+        <ProfileChangelog managerId={manager.id} refreshKey={manager.updated_at} />
       </div>
     </div>
   );

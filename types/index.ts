@@ -218,6 +218,22 @@ export interface ManagerProblem {
   updated_at: string;
 }
 
+export type ProfileChangeAuthor = 'ai' | 'manual';
+
+export interface LeaderProfileChange {
+  id: string;
+  manager_id: string;
+  meeting_id: string | null;
+  changed_by: ProfileChangeAuthor;
+  summary: string;
+  created_at: string;
+}
+
+/** Row joined with the originating meeting number, returned by the API. */
+export interface LeaderProfileChangeWithMeeting extends LeaderProfileChange {
+  meeting_number: number | null;
+}
+
 export type ProblemDeltaAction = 'new' | 'ongoing' | 'resolved';
 
 export interface ProblemDeltaItem {

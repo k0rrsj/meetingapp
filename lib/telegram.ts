@@ -47,7 +47,7 @@ export async function sendTelegramDocument(
 
   const formData = new FormData();
   formData.append('chat_id', chatId);
-  formData.append('document', new Blob([buffer], { type: 'application/pdf' }), filename);
+  formData.append('document', new Blob([new Uint8Array(buffer)], { type: 'application/pdf' }), filename);
   if (caption) formData.append('caption', caption);
 
   const res = await fetch(`${TELEGRAM_API}${token}/sendDocument`, {

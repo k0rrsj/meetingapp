@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { syncTrackFromMeeting } from '@/lib/track/sync-from-meeting';
+import { syncLeaderProfileFromMeeting } from '@/lib/profile/sync-from-meeting';
 import { MEETING_STATUS_ORDER, type MeetingStatus } from '@/types';
 
 export async function PATCH(
@@ -85,13 +86,22 @@ export async function PATCH(
   }
 
   let track_sync: Awaited<ReturnType<typeof syncTrackFromMeeting>> | null = null;
+  let profile_sync: Awaited<ReturnType<typeof syncLeaderProfileFromMeeting>> | null = null;
   if (newStatus === 'closed' && meeting.manager_id) {
-    track_sync = await syncTrackFromMeeting(supabase, {
-      meetingId: id,
-      actingUserId: user.id,
-      respectIdempotency: true,
-    });
+    // Track sync (AI) and the lightweight profile sync (deterministic, no AI)
+    // run together — neither blocks the other, keeping the close action snappy.
+    [track_sync, profile_sync] = await Promise.all([
+      syncTrackFromMeeting(supabase, {
+        meetingId: id,
+        actingUserId: user.id,
+        respectIdempotency: true,
+      }),
+      syncLeaderProfileFromMeeting(supabase, {
+        meetingId: id,
+        respectIdempotency: true,
+      }),
+    ]);
   }
 
-  return NextResponse.json({ ...updated, track_sync });
+  return NextResponse.json({ ...updated, track_sync, profile_sync });
 }

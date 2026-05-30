@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
@@ -49,6 +50,7 @@ const NEXT_STATUS_BUTTON: Record<MeetingStatus, string | null> = {
 };
 
 export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, defaultOpen = false, onDeleted, managerName = '' }: MeetingCardProps & { onDeleted?: (id: string) => void }) {
+  const router = useRouter();
   const [meeting, setMeeting] = useState(initialMeeting);
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -177,6 +179,11 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
           code?: string;
           message?: string;
         };
+        profile_sync?: {
+          ok: boolean;
+          updated?: boolean;
+          changes?: string[];
+        };
       };
 
       if (!res.ok) {
@@ -193,9 +200,19 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
         return;
       }
 
-      const { track_sync: trackSync, ...meetingPayload } = data;
+      const { track_sync: trackSync, profile_sync: profileSync, ...meetingPayload } = data;
       setMeeting((prev) => ({ ...prev, ...meetingPayload }));
       toast.success(`Статус изменён: ${STATUS_LABELS[nextStatus]}`);
+
+      if (nextStatus === 'closed' && profileSync?.ok && profileSync.updated) {
+        toast.success('Профиль руководителя обновлён', {
+          description: profileSync.changes?.length
+            ? profileSync.changes.join(' · ')
+            : undefined,
+        });
+        // Refresh server data so the left-column profile + changelog re-render.
+        router.refresh();
+      }
 
       if (nextStatus === 'closed' && trackSync) {
         if (trackSync.ok === false) {

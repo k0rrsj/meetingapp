@@ -35,9 +35,9 @@ export function ManagerTabs({ manager, companyId, meetings, currentUserId, userR
   const [activeTab, setActiveTab] = useState<Tab>('meetings');
 
   return (
-    <div className="grid lg:grid-cols-5 gap-6">
-      {/* Profile - left column */}
-      <div className="lg:col-span-2">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(360px,400px)_minmax(0,1fr)]">
+      {/* Profile - left column (fixed, readable width; stacks on mobile/tablet) */}
+      <div className="min-w-0">
         <ManagerProfile
           manager={manager}
           companyId={companyId}
@@ -46,8 +46,8 @@ export function ManagerTabs({ manager, companyId, meetings, currentUserId, userR
         />
       </div>
 
-      {/* Right column with tabs */}
-      <div className="lg:col-span-3">
+      {/* Right column with tabs — takes the remaining (wider) space */}
+      <div className="min-w-0">
         {/* Tab bar */}
         <div className="flex gap-1 mb-4 border-b border-gray-200 dark:border-gray-700">
           {TABS.map((tab) => (

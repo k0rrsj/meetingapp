@@ -29,7 +29,7 @@ export function Navigation({ user }: NavigationProps) {
 
   return (
     <header className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-      <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+      <div className="max-w-[1600px] mx-auto px-4 lg:px-6 h-14 flex items-center justify-between">
         <Link href="/companies" className="flex items-center gap-2 text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
           <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
             <Brain className="w-4 h-4 text-white" />
