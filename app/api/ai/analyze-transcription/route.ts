@@ -4,7 +4,13 @@ import { callOpenRouter } from '@/lib/openrouter/client';
 import { buildAnalyzeTranscriptionPrompt } from '@/lib/prompts/analyze-transcription';
 import { buildAgentSystemPrompt } from '@/lib/prompts/agent';
 import { fetchCompanyDocs } from '@/lib/context/company-docs';
+import { safeParseAiJson, AI_USER_MESSAGES } from '@/lib/ai/safe-parse';
+import { validateMeetingAnalysis, validatePeopleCandidates } from '@/lib/ai/schemas';
+import { logAiError } from '@/lib/ai/log';
 import type { ProblemDeltaItem } from '@/types';
+
+const ACTION = 'analyze-transcription';
+const ENDPOINT = '/api/ai/analyze-transcription';
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -80,66 +86,33 @@ export async function POST(request: NextRequest) {
       temperature: 0,
     });
 
-    let analysis: Record<string, unknown>;
-    try {
-      let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const parsed = safeParseAiJson({
+      raw,
+      validate: validateMeetingAnalysis,
+      context: { action: ACTION, endpoint: ENDPOINT, meetingId: meeting_id, managerId: meeting.manager_id, model },
+      // Transcription is preserved; the user can simply retry the analysis.
+      formatMessage: AI_USER_MESSAGES.format,
+    });
 
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(cleaned);
-        // If result is a string — it was double-encoded, parse again
-        if (typeof parsed === 'string') {
-          parsed = JSON.parse(parsed);
-        }
-      } catch {
-        // Try to extract JSON object with regex
-        const match = cleaned.match(/\{[\s\S]*\}/);
-        if (!match) throw new Error('No JSON object found');
-        let extracted = match[0];
-        parsed = JSON.parse(extracted);
-        if (typeof parsed === 'string') {
-          parsed = JSON.parse(parsed);
-        }
-      }
-      analysis = parsed as Record<string, unknown>;
-    } catch {
-      console.error('[analyze-transcription] Raw AI response:', raw);
-      return NextResponse.json(
-        { error: 'AI вернул некорректный формат. Попробуйте снова.' },
-        { status: 502 }
-      );
+    if (!parsed.ok) {
+      // The meeting / transcription is intentionally NOT modified here, so no data is lost.
+      return NextResponse.json({ error: parsed.message }, { status: 502 });
     }
 
-    const fields = [
-      'key_facts',
-      'problems_signals',
-      'conclusions',
-      'strengths',
-      'weaknesses',
-      'action_plan',
-      'next_scenario',
-    ] as const;
+    const analysis = parsed.data;
 
-    const updates: Partial<Record<typeof fields[number], string>> & { diagnostic_extension?: Record<string, unknown> } = {};
-    for (const field of fields) {
-      if (typeof analysis[field] === 'string' && analysis[field].trim()) {
-        updates[field] = analysis[field].trim();
-      }
-    }
-
-    if (
-      analysis.diagnostic_extension &&
-      typeof analysis.diagnostic_extension === 'object' &&
-      !Array.isArray(analysis.diagnostic_extension)
-    ) {
-      updates.diagnostic_extension = analysis.diagnostic_extension as Record<string, unknown>;
+    const updates: typeof analysis.fields & { diagnostic_extension?: Record<string, unknown> } = {
+      ...analysis.fields,
+    };
+    if (analysis.diagnostic_extension) {
+      updates.diagnostic_extension = analysis.diagnostic_extension;
     }
 
     await supabase.from('meetings').update(updates).eq('id', meeting_id);
 
     // Process problems_delta — update manager_problems table
     const problemsDelta = analysis.problems_delta;
-    if (Array.isArray(problemsDelta) && problemsDelta.length > 0) {
+    if (problemsDelta.length > 0) {
       for (const item of problemsDelta as ProblemDeltaItem[]) {
         try {
           if (item.action === 'new' && item.text?.trim()) {
@@ -175,7 +148,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Extract mentioned people — return candidates for user to confirm
+    // Extract mentioned people — return candidates for user to confirm.
+    // Best-effort: a failure here must never break the (already saved) analysis.
     let peopleCandidates: Array<{ name: string; position?: string; context?: string }> = [];
     try {
       const extractRaw = await callOpenRouter({
@@ -194,13 +168,12 @@ export async function POST(request: NextRequest) {
         temperature: 0.2,
       });
 
-      try {
-        const cleanedPeople = extractRaw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-        const parsed = JSON.parse(cleanedPeople);
-        if (Array.isArray(parsed)) peopleCandidates = parsed;
-      } catch {
-        peopleCandidates = [];
-      }
+      const parsedPeople = safeParseAiJson({
+        raw: extractRaw,
+        validate: validatePeopleCandidates,
+        context: { action: `${ACTION}:people`, endpoint: ENDPOINT, meetingId: meeting_id, managerId: meeting.manager_id, model },
+      });
+      peopleCandidates = parsedPeople.ok ? parsedPeople.data : [];
 
       // Filter out already existing managers
       if (peopleCandidates.length > 0) {
@@ -224,6 +197,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ...updates, people_candidates: peopleCandidates });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Сервис AI временно недоступен';
+    logAiError(
+      { action: ACTION, endpoint: ENDPOINT, meetingId: meeting_id, managerId: meeting.manager_id, model },
+      'api',
+      { detail: message },
+    );
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }

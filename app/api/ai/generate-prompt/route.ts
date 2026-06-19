@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { callOpenRouter } from '@/lib/openrouter/client';
 import { buildTranscriptionPrompt } from '@/lib/prompts/transcription-prompt';
+import { logAiError } from '@/lib/ai/log';
+import { AI_USER_MESSAGES } from '@/lib/ai/safe-parse';
+
+const ACTION = 'generate-prompt';
+const ENDPOINT = '/api/ai/generate-prompt';
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -49,6 +54,11 @@ export async function POST(request: NextRequest) {
       max_tokens: 1500,
     });
 
+    if (!transcriptionPrompt || !transcriptionPrompt.trim()) {
+      logAiError({ action: ACTION, endpoint: ENDPOINT, meetingId: meeting_id, model }, 'empty', { raw: transcriptionPrompt });
+      return NextResponse.json({ error: AI_USER_MESSAGES.empty }, { status: 502 });
+    }
+
     await supabase
       .from('meetings')
       .update({ transcription_prompt: transcriptionPrompt })
@@ -57,6 +67,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ transcription_prompt: transcriptionPrompt });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Сервис AI временно недоступен';
+    logAiError({ action: ACTION, endpoint: ENDPOINT, meetingId: meeting_id, model }, 'api', { detail: message });
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }

@@ -3,6 +3,11 @@ import { createClient } from '@/lib/supabase/server';
 import { callOpenRouter, SCENARIO_OUTPUT_MAX_TOKENS } from '@/lib/openrouter/client';
 import { buildAgentSystemPrompt } from '@/lib/prompts/agent';
 import { fetchCompanyDocs } from '@/lib/context/company-docs';
+import { logAiError } from '@/lib/ai/log';
+import { AI_USER_MESSAGES } from '@/lib/ai/safe-parse';
+
+const ACTION = 'refine-scenario';
+const ENDPOINT = '/api/ai/refine-scenario';
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -76,11 +81,18 @@ ${edited_scenario}
       temperature: 0.5,
     });
 
+    // Never replace the consultant's edited draft with an empty AI response.
+    if (!refined || !refined.trim()) {
+      logAiError({ action: ACTION, endpoint: ENDPOINT, meetingId: meeting_id, model }, 'empty', { raw: refined });
+      return NextResponse.json({ error: AI_USER_MESSAGES.empty }, { status: 502 });
+    }
+
     await supabase.from('meetings').update({ scenario: refined }).eq('id', meeting_id);
 
     return NextResponse.json({ scenario: refined });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Сервис AI временно недоступен';
+    logAiError({ action: ACTION, endpoint: ENDPOINT, meetingId: meeting_id, model }, 'api', { detail: message });
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }

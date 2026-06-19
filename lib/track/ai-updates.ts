@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { TRACK_SECTION_ID_SET } from './section-ids';
 import type { TrackSectionUpdate } from './merge-sections';
+import { extractJson } from '@/lib/ai/extract-json';
 
 export async function saveDocumentWithVersion(
   supabase: SupabaseClient,
@@ -25,22 +26,19 @@ export async function saveDocumentWithVersion(
 }
 
 export function parseAiUpdates(raw: string): { updates: TrackSectionUpdate[] } | null {
-  try {
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    const parsed = JSON.parse(cleaned) as { updates?: unknown };
-    if (!Array.isArray(parsed.updates)) return null;
-    const updates: TrackSectionUpdate[] = [];
-    for (const item of parsed.updates) {
-      if (!item || typeof item !== 'object') continue;
-      const o = item as Record<string, unknown>;
-      const sectionId = typeof o.sectionId === 'string' ? o.sectionId : '';
-      const mode = o.mode === 'replace' ? 'replace' : 'append';
-      const markdown = typeof o.markdown === 'string' ? o.markdown : '';
-      if (!sectionId || !TRACK_SECTION_ID_SET.has(sectionId)) continue;
-      updates.push({ sectionId, mode, markdown });
-    }
-    return { updates };
-  } catch {
-    return null;
+  const extracted = extractJson(raw);
+  if (!extracted.ok || !extracted.value || typeof extracted.value !== 'object') return null;
+  const parsed = extracted.value as { updates?: unknown };
+  if (!Array.isArray(parsed.updates)) return null;
+  const updates: TrackSectionUpdate[] = [];
+  for (const item of parsed.updates) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    const sectionId = typeof o.sectionId === 'string' ? o.sectionId : '';
+    const mode = o.mode === 'replace' ? 'replace' : 'append';
+    const markdown = typeof o.markdown === 'string' ? o.markdown : '';
+    if (!sectionId || !TRACK_SECTION_ID_SET.has(sectionId)) continue;
+    updates.push({ sectionId, mode, markdown });
   }
+  return { updates };
 }

@@ -23,6 +23,7 @@ export function AiGenerateButton({
   const [loading, setLoading] = useState(false);
 
   async function handleGenerate() {
+    if (loading || disabled) return;
     setLoading(true);
     try {
       const res = await fetch(endpoint, {

@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/shared/ThemeProvider';
+import { LaunchScreen } from '@/components/shared/LaunchScreen';
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'] });
 
@@ -20,6 +21,7 @@ export default function RootLayout({
     <html lang="ru" suppressHydrationWarning>
       <body className={inter.className}>
         <ThemeProvider>
+          <LaunchScreen />
           {children}
           <Toaster richColors position="top-right" />
         </ThemeProvider>

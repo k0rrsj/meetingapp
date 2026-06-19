@@ -25,6 +25,7 @@ export function MeetingHistory({ meetings, managerId, managerName = '', currentU
   const canCreateMeeting = isAssistant || userRole === 'consultant';
 
   async function handleCreateMeeting() {
+    if (creating) return;
     setCreating(true);
     try {
       const res = await fetch(`/api/managers/${managerId}/meetings`, {

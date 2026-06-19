@@ -64,6 +64,7 @@ export function TrackUpdateDiff({ meetingId, managerId, managerName, onApplied }
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
 
   async function handleAnalyze() {
+    if (loading) return;
     setLoading(true);
     setAnalysis(null);
     try {
@@ -77,7 +78,15 @@ export function TrackUpdateDiff({ meetingId, managerId, managerName, onApplied }
         toast.error(data.error ?? 'Ошибка анализа');
         return;
       }
-      setAnalysis(data.analysis as TrackAnalysis);
+      // Defense-in-depth: never trust the shape blindly, even though the API
+      // already normalizes it. Guarantees the render below cannot crash.
+      const a = (data.analysis ?? {}) as Partial<TrackAnalysis>;
+      setAnalysis({
+        summary: a.summary ?? '',
+        additions: Array.isArray(a.additions) ? a.additions : [],
+        new_action_items: Array.isArray(a.new_action_items) ? a.new_action_items : [],
+        mentioned_people: Array.isArray(a.mentioned_people) ? a.mentioned_people : [],
+      });
       setTrackDocId(data.track_document_id);
       setCurrentContent(data.current_track_content ?? '');
     } catch {
@@ -88,7 +97,7 @@ export function TrackUpdateDiff({ meetingId, managerId, managerName, onApplied }
   }
 
   async function handleApply() {
-    if (!analysis) return;
+    if (!analysis || applying) return;
     setApplying(true);
 
     const today = format(new Date(), 'd MMMM yyyy', { locale: ru });

@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { callOpenRouter } from '@/lib/openrouter/client';
 import { buildUpdateTrackPrompt } from '@/lib/prompts/update-track';
+import { safeParseAiJson } from '@/lib/ai/safe-parse';
+import { validateTrackUpdateAnalysis } from '@/lib/ai/schemas';
+import { logAiError } from '@/lib/ai/log';
+
+const ACTION = 'update-track';
+const ENDPOINT = '/api/ai/update-track';
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -52,21 +58,30 @@ export async function POST(request: NextRequest) {
       temperature: 0.4,
     });
 
-    let analysis: Record<string, unknown>;
-    try {
-      const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-      analysis = JSON.parse(cleaned);
-    } catch {
-      return NextResponse.json({ error: 'AI вернул некорректный формат. Попробуйте снова.' }, { status: 502 });
+    const parsed = safeParseAiJson({
+      raw,
+      validate: validateTrackUpdateAnalysis,
+      context: { action: ACTION, endpoint: ENDPOINT, meetingId: meeting_id, managerId: meeting.manager_id, model },
+    });
+
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.message }, { status: 502 });
     }
 
+    // `analysis` is now guaranteed to have summary + defined arrays, so the
+    // TrackUpdateDiff UI can never crash on a missing field.
     return NextResponse.json({
-      analysis,
+      analysis: parsed.data,
       track_document_id: trackResult.data?.id ?? null,
       current_track_content: trackResult.data?.content ?? '',
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Сервис AI временно недоступен';
+    logAiError(
+      { action: ACTION, endpoint: ENDPOINT, meetingId: meeting_id, managerId: meeting.manager_id, model },
+      'api',
+      { detail: message },
+    );
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }

@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { callOpenRouter } from '@/lib/openrouter/client';
 import { buildAgentSystemPrompt } from '@/lib/prompts/agent';
 import { fetchCompanyDocs } from '@/lib/context/company-docs';
+import { logAiError } from '@/lib/ai/log';
+import { AI_USER_MESSAGES } from '@/lib/ai/safe-parse';
 
 const CHAT_HISTORY_LIMIT = 20;
 
@@ -69,6 +71,11 @@ export async function POST(request: NextRequest) {
       temperature: 0.7,
     });
 
+    if (!reply || !reply.trim()) {
+      logAiError({ action: 'chat', endpoint: '/api/ai/chat', managerId: manager_id, model }, 'empty', { raw: reply });
+      return NextResponse.json({ error: AI_USER_MESSAGES.empty }, { status: 502 });
+    }
+
     // Save assistant reply
     await supabase.from('manager_chat_messages').insert({
       manager_id,
@@ -79,6 +86,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ reply });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Сервис AI временно недоступен';
+    logAiError({ action: 'chat', endpoint: '/api/ai/chat', managerId: manager_id, model }, 'api', { detail: message });
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }

@@ -237,6 +237,7 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
   }
 
   async function handleForceTrackSync() {
+    if (trackResyncing) return;
     setTrackResyncing(true);
     try {
       const res = await fetch(`/api/managers/${meeting.manager_id}/track/sync-from-meeting`, {
@@ -264,6 +265,7 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
   }
 
   async function handleDelete() {
+    if (deleting) return;
     setDeleting(true);
     try {
       const res = await fetch(`/api/meetings/${meeting.id}`, { method: 'DELETE' });
@@ -285,7 +287,7 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || uploadingFile) return;
 
     setUploadingFile(true);
     const formData = new FormData();
@@ -330,6 +332,7 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
   }
 
   async function handleSendScenarioToTelegram() {
+    if (sendingScenarioToTelegram) return;
     if (!meeting.scenario_approved_at) {
       toast.error('Сначала утвердите сценарий');
       return;
@@ -374,6 +377,7 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
   }
 
   async function handleAnalyzeTranscription() {
+    if (analyzingTranscription) return;
     if (!meeting.transcription_text) {
       toast.error('Сначала добавьте текст расшифровки');
       return;
@@ -429,6 +433,7 @@ export function MeetingCard({ meeting: initialMeeting, currentUserId, userRole, 
   }
 
   async function handleConfirmPeople() {
+    if (creatingCards) return;
     const toCreate = peopleCandidates.filter((p) => selectedPeople.has(p.name));
     if (toCreate.length === 0) {
       setPeopleCandidates([]);

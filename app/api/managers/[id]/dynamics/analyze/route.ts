@@ -1,23 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { callOpenRouter } from '@/lib/openrouter/client';
+import { safeParseAiJson } from '@/lib/ai/safe-parse';
+import { validateDynamicsSnapshot } from '@/lib/ai/schemas';
+import { logAiError } from '@/lib/ai/log';
 
-function safeJsonParse(raw: string): Record<string, unknown> | null {
-  try {
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    const parsed = JSON.parse(cleaned);
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    try {
-      const parsed = JSON.parse(match[0]);
-      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
-    } catch {
-      return null;
-    }
-  }
-}
+const ACTION = 'dynamics-analyze';
+const ENDPOINT = '/api/managers/[id]/dynamics/analyze';
 
 export async function POST(
   _request: NextRequest,
@@ -125,16 +114,20 @@ ${JSON.stringify(rows, null, 2)}
       temperature: 0.2,
     });
 
-    const parsed = safeJsonParse(raw);
-    if (!parsed) {
-      return NextResponse.json({ error: 'AI вернул некорректный JSON' }, { status: 502 });
+    const parsed = safeParseAiJson({
+      raw,
+      validate: validateDynamicsSnapshot,
+      context: { action: ACTION, endpoint: ENDPOINT, managerId, model },
+    });
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.message }, { status: 502 });
     }
 
     const persistedAt = new Date().toISOString();
     const { error: saveError } = await supabase
       .from('managers')
       .update({
-        dynamics_snapshot: parsed,
+        dynamics_snapshot: parsed.data,
         dynamics_snapshot_updated_at: persistedAt,
       })
       .eq('id', managerId);
@@ -152,9 +145,10 @@ ${JSON.stringify(rows, null, 2)}
       );
     }
 
-    return NextResponse.json({ ...parsed, persisted: true, persisted_at: persistedAt });
+    return NextResponse.json({ ...parsed.data, persisted: true, persisted_at: persistedAt });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Сервис AI временно недоступен';
+    logAiError({ action: ACTION, endpoint: ENDPOINT, managerId, model }, 'api', { detail: message });
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }

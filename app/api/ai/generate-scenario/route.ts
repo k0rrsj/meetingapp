@@ -4,6 +4,11 @@ import { callOpenRouter, SCENARIO_OUTPUT_MAX_TOKENS } from '@/lib/openrouter/cli
 import { buildScenarioPrompt } from '@/lib/prompts/scenario';
 import { buildAgentSystemPrompt } from '@/lib/prompts/agent';
 import { fetchCompanyDocs } from '@/lib/context/company-docs';
+import { logAiError } from '@/lib/ai/log';
+import { AI_USER_MESSAGES } from '@/lib/ai/safe-parse';
+
+const ACTION = 'generate-scenario';
+const ENDPOINT = '/api/ai/generate-scenario';
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -79,12 +84,19 @@ export async function POST(request: NextRequest) {
       max_tokens: SCENARIO_OUTPUT_MAX_TOKENS,
     });
 
+    // Don't overwrite an existing scenario with an empty AI response.
+    if (!scenario || !scenario.trim()) {
+      logAiError({ action: ACTION, endpoint: ENDPOINT, meetingId: meeting_id, managerId: meeting.manager_id, model }, 'empty', { raw: scenario });
+      return NextResponse.json({ error: AI_USER_MESSAGES.empty }, { status: 502 });
+    }
+
     // Save to DB
     await supabase.from('meetings').update({ scenario }).eq('id', meeting_id);
 
     return NextResponse.json({ scenario });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Сервис AI временно недоступен';
+    logAiError({ action: ACTION, endpoint: ENDPOINT, meetingId: meeting_id, managerId: meeting.manager_id, model }, 'api', { detail: message });
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }
